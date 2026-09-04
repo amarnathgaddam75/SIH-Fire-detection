@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Cache
+cache/
+
+# Windows metadata
+*:Zone.Identifier
+
+# Large/downloaded archives
+*.zip
+
+# Temporary files
+*.tmp
+*.log
+
+# Environment/secrets
+.env
+
+# Large satellite imagery
+*.tif
+*.tiff
+*.jp2
+
+# ML model files
+*.pt
+*.pth
+*.onnx
