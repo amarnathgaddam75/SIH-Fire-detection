@@ -8,7 +8,7 @@
   <meta name="description"
     content="Interactive Leaflet map of NASA FIRMS thermal hotspots classified using both OSM spatial rules and trained XGBoost ML models, highlighting disagreements, FRP anomalies, and temporal escalation." />
 
-  <!-- ─── Leaflet CSS (the map library) ─── -->
+  <!-- ─── Leaflet CSS ─── -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
   <!-- ─── Google Fonts: Inter ─── -->
@@ -25,11 +25,11 @@
       --color-alert-border: #f39c12;
       --color-disagreement: #facc15;
       --color-escalating: #ec4899;
+      --color-primary: #3b82f6;
       --color-panel-bg: rgba(15, 23, 42, 0.92);
       --color-panel-border: rgba(255, 255, 255, 0.12);
       --color-text: #f1f5f9;
       --color-text-muted: #94a3b8;
-      --color-primary: #3b82f6;
       --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
@@ -51,6 +51,41 @@
       height: 100vh;
     }
 
+    /* Crosshair cursor when Live Test mode is active */
+    body.live-test-active #map {
+      cursor: crosshair !important;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       LIVE TEST BANNER (Top-Center Notification)
+       ═══════════════════════════════════════════════════════════════════════
+    */
+    #live-test-banner {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1050;
+      background: rgba(30, 58, 138, 0.95);
+      border: 1px solid #60a5fa;
+      box-shadow: 0 8px 24px rgba(37, 99, 235, 0.4);
+      backdrop-filter: blur(12px);
+      padding: 8px 18px;
+      border-radius: 24px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #eff6ff;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      animation: pulseGlow 2s infinite ease-in-out;
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 12px rgba(59, 130, 246, 0.4); }
+      50% { box-shadow: 0 0 24px rgba(59, 130, 246, 0.8); }
+    }
+
     /* ═══════════════════════════════════════════════════════════════════════
        STATS & CONTROL PANEL (Top-Left)
        ═══════════════════════════════════════════════════════════════════════
@@ -68,7 +103,7 @@
       padding: 16px 20px;
       color: var(--color-text);
       min-width: 250px;
-      max-width: 290px;
+      max-width: 300px;
       box-shadow: 0 10px 36px rgba(0, 0, 0, 0.55);
       transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
@@ -127,6 +162,61 @@
       margin: 8px 0;
     }
 
+    /* Live Classification Test Button */
+    .btn-live-mode {
+      width: 100%;
+      margin: 10px 0 6px 0;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #1e3a8a, #2563eb);
+      border: 1px solid #60a5fa;
+      color: #ffffff;
+      font-family: var(--font);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+    }
+
+    .btn-live-mode:hover {
+      background: linear-gradient(135deg, #2563eb, #3b82f6);
+      box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
+      transform: translateY(-1px);
+    }
+
+    .btn-live-mode.active {
+      background: linear-gradient(135deg, #dc2626, #b91c1c);
+      border-color: #f87171;
+      box-shadow: 0 4px 14px rgba(220, 38, 38, 0.4);
+    }
+
+    .btn-alerts-toggle {
+      width: 100%;
+      margin-top: 6px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      color: #fbbf24;
+      font-family: var(--font);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: all 0.15s ease;
+    }
+
+    .btn-alerts-toggle:hover {
+      background: rgba(245, 158, 11, 0.25);
+    }
+
     /* Filters */
     .filter-section h3 {
       font-size: 11px;
@@ -178,6 +268,127 @@
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
+       CRITICAL ALERTS DRAWER / MODAL (Right Sidebar)
+       ═══════════════════════════════════════════════════════════════════════
+    */
+    #alerts-drawer {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      width: 360px;
+      max-height: calc(100vh - 120px);
+      z-index: 1010;
+      background: var(--color-panel-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--color-panel-border);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.65);
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes slideInRight {
+      from { opacity: 0; transform: translateX(30px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    .alerts-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--color-panel-border);
+    }
+
+    .alerts-header h3 {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fbbf24;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .close-btn {
+      background: transparent;
+      border: none;
+      color: var(--color-text-muted);
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .close-btn:hover { color: #fff; }
+
+    .alerts-list {
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: calc(100vh - 200px);
+      padding-right: 4px;
+    }
+
+    .alerts-list::-webkit-scrollbar {
+      width: 4px;
+    }
+    .alerts-list::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 2px;
+    }
+
+    .alert-card {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      border-left: 3px solid #ef4444;
+      border-radius: 8px;
+      padding: 10px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .alert-card:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: #f59e0b;
+      transform: translateX(-2px);
+    }
+
+    .alert-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #94a3b8;
+    }
+
+    .alert-narrative {
+      font-size: 11px;
+      line-height: 1.45;
+      color: #e2e8f0;
+      margin-bottom: 6px;
+    }
+
+    .alert-meta-tags {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .alert-tag {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
        TIME SLIDER & TIMELINE CONTROLLER (Bottom-Center)
        ═══════════════════════════════════════════════════════════════════════
     */
@@ -202,12 +413,6 @@
       flex-direction: column;
       gap: 10px;
       user-select: none;
-      animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    @keyframes fadeInUp {
-      from { opacity: 0; transform: translate(-50%, 15px); }
-      to { opacity: 1; transform: translate(-50%, 0); }
     }
 
     .timeline-header {
@@ -271,7 +476,6 @@
       font-variant-numeric: tabular-nums;
     }
 
-    /* Mode toggle pill switch */
     .timeline-mode-toggle {
       display: flex;
       background: rgba(0, 0, 0, 0.35);
@@ -304,7 +508,6 @@
       box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4);
     }
 
-    /* Controls bar */
     .timeline-controls {
       display: flex;
       align-items: center;
@@ -331,10 +534,6 @@
     .timeline-btn:hover {
       background: rgba(255, 255, 255, 0.16);
       transform: translateY(-1px);
-    }
-
-    .timeline-btn:active {
-      transform: translateY(0);
     }
 
     .play-btn {
@@ -371,7 +570,6 @@
       gap: 4px;
     }
 
-    /* Styled Range Slider */
     #time-slider {
       -webkit-appearance: none;
       appearance: none;
@@ -382,7 +580,6 @@
       outline: none;
       cursor: pointer;
       position: relative;
-      transition: background 0.15s ease;
     }
 
     #time-slider::-webkit-slider-thumb {
@@ -395,28 +592,12 @@
       border: 2.5px solid #0f172a;
       box-shadow: 0 0 10px rgba(96, 165, 250, 0.8);
       cursor: grab;
-      transition: transform 0.12s ease, background 0.12s ease;
+      transition: transform 0.12s ease;
     }
 
     #time-slider::-webkit-slider-thumb:hover {
       transform: scale(1.22);
       background: #93c5fd;
-      box-shadow: 0 0 14px rgba(147, 197, 253, 0.9);
-    }
-
-    #time-slider::-webkit-slider-thumb:active {
-      cursor: grabbing;
-      transform: scale(1.1);
-    }
-
-    #time-slider::-moz-range-thumb {
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      background: #60a5fa;
-      border: 2.5px solid #0f172a;
-      box-shadow: 0 0 10px rgba(96, 165, 250, 0.8);
-      cursor: grab;
     }
 
     .timeline-range-labels {
@@ -485,7 +666,7 @@
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
-       POPUP STYLING WITH SIDE-BY-SIDE COMPARISON & ESCALATION
+       POPUP STYLING & SHAP INLINE CARDS
        ═══════════════════════════════════════════════════════════════════════
     */
     .leaflet-popup-content-wrapper {
@@ -584,20 +765,6 @@
       color: #fde047;
     }
 
-    .consensus-banner {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 5px 8px;
-      margin: 8px 0;
-      background: rgba(34, 197, 94, 0.1);
-      border: 1px solid rgba(34, 197, 94, 0.25);
-      border-radius: 6px;
-      font-size: 11px;
-      font-weight: 500;
-      color: #86efac;
-    }
-
     .popup-meta {
       display: flex;
       justify-content: space-between;
@@ -605,16 +772,63 @@
       font-size: 12px;
     }
 
-    .popup-evidence {
+    /* Live Re-run Button & SHAP Section */
+    .btn-rerun-live {
+      width: 100%;
       margin-top: 8px;
-      padding-top: 8px;
-      border-top: 1px solid var(--color-panel-border);
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid #3b82f6;
+      color: #93c5fd;
+      font-family: var(--font);
       font-size: 11px;
-      color: var(--color-text-muted);
-      line-height: 1.4;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.15s ease;
     }
 
-    /* ─── Loading overlay ─── */
+    .btn-rerun-live:hover {
+      background: rgba(59, 130, 246, 0.35);
+      color: #fff;
+    }
+
+    .shap-card {
+      margin-top: 8px;
+      padding: 8px 10px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      font-size: 11px;
+    }
+
+    .shap-title {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #60a5fa;
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .shap-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 2px 0;
+      font-size: 11px;
+    }
+
+    .shap-val-pos { color: #4ade80; font-weight: 600; }
+    .shap-val-neg { color: #f87171; font-weight: 600; }
+
+    /* Loading overlay */
     #loading {
       position: absolute;
       top: 0;
@@ -657,7 +871,13 @@
   <!-- Loading overlay -->
   <div id="loading">
     <div class="spinner"></div>
-    <div style="font-size: 14px; font-weight: 600; letter-spacing: 0.5px;">Loading GeoFlare ML Hotspots...</div>
+    <div style="font-size: 14px; font-weight: 600; letter-spacing: 0.5px;">Loading GeoFlare API Hotspots...</div>
+  </div>
+
+  <!-- Live Test Banner (shown when Live Classification Mode is Active) -->
+  <div id="live-test-banner">
+    <span>⚡ <strong>LIVE TEST MODE ACTIVE:</strong> Click anywhere on the map to evaluate a hypothetical hotspot</span>
+    <button class="close-btn" id="btn-exit-live-banner" style="font-size: 14px;">✕</button>
   </div>
 
   <!-- Map container -->
@@ -666,8 +886,8 @@
   <!-- Stats & Controls Panel (Top-Left) -->
   <div id="stats-panel">
     <h2>
-      <span>GeoFlare Hotspots</span>
-      <span class="badge-ml">AI Enhanced</span>
+      <span>GeoFlare Intelligence</span>
+      <span class="badge-ml">API Live</span>
     </h2>
 
     <div class="stat-row">
@@ -697,7 +917,7 @@
 
     <div class="stat-row">
       <span class="stat-dot" style="background: var(--color-unknown)"></span>
-      <span>Unknown / Review</span>
+      <span>Unknown / Ambiguous</span>
       <span class="stat-count" id="stat-unknown">0</span>
     </div>
 
@@ -712,9 +932,20 @@
 
     <div class="stat-row" style="color: #fbbf24;">
       <span class="stat-dot" style="background: var(--color-alert-border)"></span>
-      <span>FRP Spikes</span>
+      <span>Critical Alerts</span>
       <span class="stat-count" id="stat-alerts">0</span>
     </div>
+
+    <!-- View Critical Alerts Drawer Button -->
+    <button class="btn-alerts-toggle" id="btn-toggle-alerts">
+      <span>🚨 View Critical Alerts (31)</span>
+      <span id="alerts-toggle-arrow">▶</span>
+    </button>
+
+    <!-- Test Live Classification Button -->
+    <button class="btn-live-mode" id="btn-toggle-live-mode">
+      <span>⚡ Test Live Classification</span>
+    </button>
 
     <!-- Filter checkboxes -->
     <div class="stat-divider"></div>
@@ -736,6 +967,19 @@
         <input type="checkbox" id="chk-disagreements-only" />
         <span>Show Disagreements Only</span>
       </label>
+    </div>
+  </div>
+
+  <!-- Critical Alerts Drawer (Right Sidebar) -->
+  <div id="alerts-drawer">
+    <div class="alerts-header">
+      <h3>🚨 Critical Risk Alerts</h3>
+      <button class="close-btn" id="btn-close-alerts">✕</button>
+    </div>
+    <div class="alerts-list" id="alerts-list-container">
+      <div style="font-size: 12px; color: var(--color-text-muted); text-align: center; padding: 20px;">
+        Loading live alerts from API...
+      </div>
     </div>
   </div>
 
@@ -818,29 +1062,31 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
-    // 1. Initialize Map centered on Korba-Raigarh industrial belt
+    // 1. API Configuration
+    // Detect current hostname and connect to FastAPI backend on port 8001
+    const API_BASE = `${window.location.protocol}//${window.location.hostname}:8001`;
+
+    // 2. Initialize Map centered on Korba-Raigarh industrial belt
     const map = L.map('map').setView([22.35, 82.7], 10);
 
-    // Dark-themed tile layer
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors',
       maxZoom: 19
     }).addTo(map);
 
-    // 2. Layer Groups for Hotspot Classes
+    // 3. Layer Groups
     const industrialLayer = L.layerGroup().addTo(map);
     const naturalLayer = L.layerGroup().addTo(map);
     const otherLayer = L.layerGroup().addTo(map);
+    const hypotheticalLayer = L.layerGroup().addTo(map);
 
-    // Master list of all marker objects
     const allMarkers = [];
-
-    // Timeline state
     let calendarDates = [];
     let currentDateIndex = 0;
     let isCumulative = true;
     let playInterval = null;
     let isPlaying = false;
+    let isLiveTestActive = false;
 
     // UI Elements
     const timeSlider = document.getElementById('time-slider');
@@ -858,7 +1104,15 @@
     const btnNextDay = document.getElementById('btn-next-day');
     const btnResetTimeline = document.getElementById('btn-reset-timeline');
 
-    // Color helpers
+    const btnToggleLiveMode = document.getElementById('btn-toggle-live-mode');
+    const liveTestBanner = document.getElementById('live-test-banner');
+    const btnExitLiveBanner = document.getElementById('btn-exit-live-banner');
+    const btnToggleAlerts = document.getElementById('btn-toggle-alerts');
+    const alertsDrawer = document.getElementById('alerts-drawer');
+    const btnCloseAlerts = document.getElementById('btn-close-alerts');
+    const alertsListContainer = document.getElementById('alerts-list-container');
+
+    // Helper functions for badge and color styles
     function getBadgeClass(label) {
       if (!label) return 'unknown';
       const l = label.toLowerCase();
@@ -877,7 +1131,6 @@
       return '#a855f7';
     }
 
-    // Generate chronological list of calendar dates between min and max
     function generateCalendarDates(startDateStr, endDateStr) {
       const dates = [];
       const current = new Date(startDateStr);
@@ -893,19 +1146,21 @@
       return dates;
     }
 
-    // 3. Load firms_final_ml.geojson (or fallback)
-    const geojsonUrl = 'data/firms_final_ml.geojson';
+    // 4. Load Data from FastAPI Endpoint: GET /hotspots (with static fallback)
+    const hotspotsUrl = `${API_BASE}/hotspots`;
 
-    fetch(geojsonUrl)
+    fetch(hotspotsUrl)
+      .catch(() => {
+        console.warn('API /hotspots endpoint unreachable, falling back to static file data/firms_final_ml.geojson');
+        return fetch('data/firms_final_ml.geojson');
+      })
       .then(response => {
         if (!response.ok) {
-          console.warn('firms_final_ml.geojson not found, falling back to firms_final.geojson');
-          return fetch('data/firms_final.geojson').then(r => r.json());
+          return fetch('data/firms_final.geojson');
         }
         return response.json();
       })
       .then(geojson => {
-        // Collect all dates to establish timeline boundaries
         const rawDates = geojson.features
           .map(f => f.properties.acq_date)
           .filter(Boolean)
@@ -924,12 +1179,11 @@
 
         timeSlider.min = 0;
         timeSlider.max = calendarDates.length - 1;
-        // Start at index 0 (cumulative build-up from beginning)
         currentDateIndex = 0;
         timeSlider.value = currentDateIndex;
 
-        // Process GeoJSON features into Leaflet CircleMarkers
-        geojson.features.forEach(feature => {
+        // Process features into markers
+        geojson.features.forEach((feature, index) => {
           const p = feature.properties;
           const ruleLabel = p.final_label || p.class_label || 'Unknown';
           const mlLabel = p.ml_predicted_label || ruleLabel;
@@ -938,18 +1192,14 @@
           const mlConf = p.ml_confidence !== undefined ? (p.ml_confidence * 100).toFixed(1) : 'N/A';
           const effLabel = mlLabel;
           const acqDate = p.acq_date || 'Unknown';
+          const rowIndex = p.row_index !== undefined ? p.row_index : index;
 
-          // Geometry
           const coords = feature.geometry.coordinates; // [lon, lat]
           const latLng = [coords[1], coords[0]];
 
-          // Radius scaling
           const radius = Math.min(18, Math.max(4.5, 4.5 + (p.frp || 0) / 22));
-
-          // Base fill color based on ML predicted class
           const fillColor = getFillColor(mlLabel);
 
-          // Border & Stroke logic
           let borderColor, borderWeight, dashArray;
           if (isDisagreement) {
             borderColor = '#facc15';
@@ -975,7 +1225,7 @@
             opacity: 1
           });
 
-          // Build Side-by-Side Popup
+          // Build Side-by-Side Popup with Inline "Re-run live" button
           const ruleBadgeClass = getBadgeClass(ruleLabel);
           const mlBadgeClass = getBadgeClass(mlLabel);
           const frpDevStr = (p.frp_deviation !== null && p.frp_deviation !== undefined)
@@ -996,61 +1246,69 @@
             riskBadge = `<span class="popup-badge" style="background:${riskColor}25; color:${riskColor}; border:1px solid ${riskColor}; font-weight:700;">Risk: ${p.risk_score}</span>`;
           }
 
+          const popupId = `popup-node-${rowIndex}`;
           let popupHTML = `
-            <div class="popup-header">
-              <span class="popup-title">Hotspot Details</span>
-              <div>${riskBadge}${escBadge}</div>
-            </div>
-
-            <!-- Side-by-Side Classification Comparison -->
-            <div class="labels-comparison">
-              <div class="label-col">
-                <span class="label-col-title">Rule-Based</span>
-                <span class="popup-badge ${ruleBadgeClass}">${ruleLabel}</span>
+            <div id="${popupId}">
+              <div class="popup-header">
+                <span class="popup-title">Hotspot Details</span>
+                <div>${riskBadge}${escBadge}</div>
               </div>
-              <div class="label-col">
-                <span class="label-col-title">ML XGBoost</span>
-                <span class="popup-badge ${mlBadgeClass}">${mlLabel}</span>
-                <span class="confidence-text">${mlConf}% conf</span>
+
+              <!-- Side-by-Side Classification Comparison -->
+              <div class="labels-comparison">
+                <div class="label-col">
+                  <span class="label-col-title">Rule-Based</span>
+                  <span class="popup-badge ${ruleBadgeClass}">${ruleLabel}</span>
+                </div>
+                <div class="label-col">
+                  <span class="label-col-title">ML XGBoost</span>
+                  <span class="popup-badge ${mlBadgeClass}">${mlLabel}</span>
+                  <span class="confidence-text">${mlConf}% conf</span>
+                </div>
               </div>
-            </div>
 
-            ${isDisagreement
-              ? `<div class="disagreement-banner">
-                   <span>⚠</span>
-                   <span>Model Disagrees with Rule (${ruleLabel} → ${mlLabel})</span>
-                 </div>`
-              : `<div class="consensus-banner">
-                   <span>✓</span>
-                   <span>Consensus: Rule & ML Model Agree</span>
-                 </div>`
-            }
+              ${isDisagreement
+                ? `<div class="disagreement-banner">
+                     <span>⚠</span>
+                     <span>Model Disagrees with Rule (${ruleLabel} → ${mlLabel})</span>
+                   </div>`
+                : ''
+              }
 
-            <div class="popup-meta">
-              <span><strong>Date:</strong> ${acqDate}</span>
-              <span><strong>FRP:</strong> ${p.frp ? Number(p.frp).toFixed(1) : 'N/A'} MW</span>
-            </div>
-            <div class="popup-meta" style="color: var(--color-text-muted); font-size: 11px;">
-              <span><strong>Persistence:</strong> ${p.distinct_days || 0} days</span>
-              <span>${frpDevStr}</span>
-            </div>
+              <div class="popup-meta">
+                <span><strong>Date:</strong> ${acqDate}</span>
+                <span><strong>FRP:</strong> ${p.frp ? Number(p.frp).toFixed(1) : 'N/A'} MW</span>
+              </div>
+              <div class="popup-meta" style="color: var(--color-text-muted); font-size: 11px;">
+                <span><strong>Persistence:</strong> ${p.distinct_days || 0} days</span>
+                <span>${frpDevStr}</span>
+              </div>
 
-            ${p.distance_to_residential_m !== undefined ? `
-              <div class="popup-meta" style="color: #cbd5e1; font-size: 11px; margin-top: 4px;">
-                <span><strong>Residential Dist:</strong> ${Number(p.distance_to_residential_m).toFixed(0)} m</span>
-                <span><strong>Cluster:</strong> ${p.cluster_id !== undefined ? p.cluster_id : 'N/A'}</span>
-              </div>` : ''}
+              ${p.distance_to_residential_m !== undefined ? `
+                <div class="popup-meta" style="color: #cbd5e1; font-size: 11px; margin-top: 4px;">
+                  <span><strong>Residential Dist:</strong> ${Number(p.distance_to_residential_m).toFixed(0)} m</span>
+                  <span><strong>Cluster:</strong> ${p.cluster_id !== undefined ? p.cluster_id : 'N/A'}</span>
+                </div>` : ''}
 
-            <div class="popup-evidence">
-              <strong style="color: #cbd5e1;">Evidence / Context:</strong><br>
-              ${p.evidence || 'Cluster-based spatial and temporal persistence features.'}
+              <!-- Live Re-run Section -->
+              <div class="live-rerun-box" id="live-rerun-box-${rowIndex}">
+                <button class="btn-rerun-live" onclick="rerunLivePrediction(${rowIndex}, ${latLng[0]}, ${latLng[1]})">
+                  ⚡ Re-run Live Model & SHAP
+                </button>
+              </div>
+
+              <div class="popup-evidence">
+                <strong style="color: #cbd5e1;">Evidence / Context:</strong><br>
+                ${p.evidence || 'Cluster-based spatial and temporal persistence features.'}
+              </div>
             </div>
           `;
 
           marker.bindPopup(popupHTML, { maxWidth: 350 });
 
-          // Categorize marker metadata for combined filtering
           marker.geoData = {
+            rowIndex: rowIndex,
+            latLng: latLng,
             acq_date: acqDate,
             isIndustrial: effLabel.includes('Industrial'),
             isNatural: effLabel.includes('Natural'),
@@ -1064,25 +1322,21 @@
           allMarkers.push(marker);
         });
 
-        // Initialize display with current date
         updateTimelineView();
-
-        // Hide Loading Overlay
         document.getElementById('loading').classList.add('hidden');
       })
       .catch(error => {
         console.error('Error loading GeoJSON:', error);
         document.getElementById('loading').innerHTML =
           `<div style="color: #f87171; font-size: 16px; text-align: center; padding: 20px;">
-             Failed to load ML GeoJSON.<br>
+             Failed to load Hotspots GeoJSON from API.<br>
              <span style="font-size: 13px; color: #94a3b8; display: block; margin-top: 8px;">
-               Ensure data/firms_final_ml.geojson exists.<br>
-               Run: <code>python3 add_ml_predictions.py</code>
+               Ensure FastAPI is running: <code>uvicorn api:app --port 8001</code>
              </span>
            </div>`;
       });
 
-    // 4. Combined Filtering & Rendering Logic
+    // 5. Combined Filtering & Rendering Logic
     function applyFilters() {
       if (calendarDates.length === 0) return;
 
@@ -1092,33 +1346,22 @@
       const showOther = document.getElementById('chk-other').checked;
       const disagreementsOnly = document.getElementById('chk-disagreements-only').checked;
 
-      // Clear all layers
       industrialLayer.clearLayers();
       naturalLayer.clearLayers();
       otherLayer.clearLayers();
 
-      let visibleTotal = 0;
-      let visibleInd = 0;
-      let visibleNat = 0;
-      let visibleAgri = 0;
-      let visibleUnknown = 0;
-      let visibleDisagreements = 0;
-      let visibleAlerts = 0;
+      let visibleTotal = 0, visibleInd = 0, visibleNat = 0, visibleAgri = 0, visibleUnknown = 0;
+      let visibleDisagreements = 0, visibleAlerts = 0;
 
       allMarkers.forEach(m => {
         const d = m.geoData;
-
-        // Date Condition
         const dateMatch = isCumulative
           ? (d.acq_date <= selectedDate)
           : (d.acq_date === selectedDate);
 
         if (!dateMatch) return;
-
-        // Disagreement filter
         if (disagreementsOnly && !d.isDisagreement) return;
 
-        // Category filter & Layer addition
         let added = false;
         if (d.isIndustrial && showInd) {
           industrialLayer.addLayer(m);
@@ -1151,12 +1394,10 @@
       document.getElementById('stat-disagreements').textContent = visibleDisagreements.toLocaleString();
       document.getElementById('stat-alerts').textContent = visibleAlerts.toLocaleString();
 
-      // Update Timeline Card
       dateValLabel.textContent = selectedDate;
       countBadge.textContent = `${visibleTotal.toLocaleString()} visible`;
       progressText.textContent = `Day ${currentDateIndex + 1} of ${calendarDates.length}`;
 
-      // Update Slider dynamic track gradient
       const pct = (currentDateIndex / (calendarDates.length - 1)) * 100;
       timeSlider.style.background = `linear-gradient(to right, #3b82f6 0%, #8b5cf6 ${pct}%, rgba(255,255,255,0.16) ${pct}%, rgba(255,255,255,0.16) 100%)`;
     }
@@ -1165,23 +1406,19 @@
       applyFilters();
     }
 
-    // 5. Timeline Interactions & Playback
+    // 6. Timeline Playback & Dragging
     timeSlider.addEventListener('input', (e) => {
       currentDateIndex = parseInt(e.target.value, 10);
       updateTimelineView();
     });
 
     function togglePlayPause() {
-      if (isPlaying) {
-        pauseTimeline();
-      } else {
-        startTimeline();
-      }
+      if (isPlaying) pauseTimeline();
+      else startTimeline();
     }
 
     function startTimeline() {
       if (calendarDates.length === 0) return;
-      // If at the end, restart from beginning
       if (currentDateIndex >= calendarDates.length - 1) {
         currentDateIndex = 0;
         timeSlider.value = currentDateIndex;
@@ -1201,7 +1438,7 @@
         } else {
           pauseTimeline();
         }
-      }, 150); // ~150ms per step as requested
+      }, 150);
     }
 
     function pauseTimeline() {
@@ -1217,7 +1454,6 @@
 
     playPauseBtn.addEventListener('click', togglePlayPause);
 
-    // Step Prev/Next buttons
     btnPrevDay.addEventListener('click', () => {
       if (currentDateIndex > 0) {
         currentDateIndex--;
@@ -1234,19 +1470,13 @@
       }
     });
 
-    // Reset button toggles between start and end
     btnResetTimeline.addEventListener('click', () => {
       pauseTimeline();
-      if (currentDateIndex === 0) {
-        currentDateIndex = calendarDates.length - 1; // Jump to end
-      } else {
-        currentDateIndex = 0; // Rewind to start
-      }
+      currentDateIndex = (currentDateIndex === 0) ? (calendarDates.length - 1) : 0;
       timeSlider.value = currentDateIndex;
       updateTimelineView();
     });
 
-    // Mode Toggle: Cumulative vs Single Day
     btnModeCumulative.addEventListener('click', () => {
       if (isCumulative) return;
       isCumulative = true;
@@ -1263,11 +1493,278 @@
       updateTimelineView();
     });
 
-    // Checkbox Listeners
     document.getElementById('chk-industrial').addEventListener('change', applyFilters);
     document.getElementById('chk-natural').addEventListener('change', applyFilters);
     document.getElementById('chk-other').addEventListener('change', applyFilters);
     document.getElementById('chk-disagreements-only').addEventListener('change', applyFilters);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 7. Critical Alerts Panel — Wired to GET /alerts
+    // ═══════════════════════════════════════════════════════════════════════
+    function loadAlertsFromAPI() {
+      fetch(`${API_BASE}/alerts`)
+        .then(r => {
+          if (!r.ok) throw new Error('API offline');
+          return r.json();
+        })
+        .then(data => {
+          const count = data.count || 0;
+          document.getElementById('stat-alerts').textContent = count.toLocaleString();
+          document.getElementById('btn-toggle-alerts').innerHTML = `<span>🚨 View Critical Alerts (${count})</span><span id="alerts-toggle-arrow">▶</span>`;
+
+          const alerts = data.alerts || [];
+          if (alerts.length === 0) {
+            alertsListContainer.innerHTML = `<div style="text-align:center; padding:20px; font-size:12px; color:#94a3b8;">No critical alerts found.</div>`;
+            return;
+          }
+
+          let html = '';
+          alerts.forEach(a => {
+            html += `
+              <div class="alert-card" onclick="flyToAlert(${a.latitude}, ${a.longitude})">
+                <div class="alert-card-header">
+                  <span>${a.acq_date}</span>
+                  <span style="color:#f87171;">FRP: ${a.frp.toFixed(1)} MW</span>
+                </div>
+                <div class="alert-narrative">${a.narrative}</div>
+                <div class="alert-meta-tags">
+                  <span class="alert-tag" style="background:rgba(239,68,68,0.25); color:#fca5a5;">Critical</span>
+                  <span class="alert-tag" style="background:rgba(236,72,153,0.25); color:#f472b6;">${a.escalation_status}</span>
+                  <span class="alert-tag" style="color:#94a3b8;">${a.distance_to_residential_m ? Number(a.distance_to_residential_m).toFixed(0) + 'm to homes' : ''}</span>
+                </div>
+              </div>
+            `;
+          });
+          alertsListContainer.innerHTML = html;
+        })
+        .catch(err => {
+          console.warn('Could not load /alerts from API:', err);
+          alertsListContainer.innerHTML = `<div style="text-align:center; padding:15px; font-size:12px; color:#f87171;">API offline.<br>Run <code>uvicorn api:app --port 8001</code></div>`;
+        });
+    }
+
+    // Toggle Alerts Drawer
+    btnToggleAlerts.addEventListener('click', () => {
+      const isVisible = alertsDrawer.style.display === 'flex';
+      alertsDrawer.style.display = isVisible ? 'none' : 'flex';
+      document.getElementById('alerts-toggle-arrow').textContent = isVisible ? '▶' : '▼';
+      if (!isVisible) loadAlertsFromAPI();
+    });
+
+    btnCloseAlerts.addEventListener('click', () => {
+      alertsDrawer.style.display = 'none';
+      document.getElementById('alerts-toggle-arrow').textContent = '▶';
+    });
+
+    window.flyToAlert = function(lat, lon) {
+      map.flyTo([lat, lon], 14, { duration: 1.2 });
+      // Find matching marker and open its popup
+      const target = allMarkers.find(m => {
+        const ll = m.getLatLng();
+        return Math.abs(ll.lat - lat) < 0.001 && Math.abs(ll.lng - lon) < 0.001;
+      });
+      if (target) {
+        setTimeout(() => target.openPopup(), 1250);
+      }
+    };
+
+    // Load alerts initially
+    loadAlertsFromAPI();
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 8. Re-run Live Model for Existing Marker (POST /predict/existing)
+    // ═══════════════════════════════════════════════════════════════════════
+    window.rerunLivePrediction = function(rowIndex, lat, lon) {
+      const container = document.getElementById(`live-rerun-box-${rowIndex}`);
+      if (!container) return;
+
+      container.innerHTML = `<div style="font-size:11px; color:#60a5fa; padding:6px; text-align:center;">⚡ Evaluating model & SHAP live...</div>`;
+
+      fetch(`${API_BASE}/predict/existing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ row_index: rowIndex, latitude: lat, longitude: lon })
+      })
+        .then(r => {
+          if (!r.ok) throw new Error('Prediction API failed');
+          return r.json();
+        })
+        .then(res => {
+          const badgeClass = getBadgeClass(res.predicted_class);
+          let shapRowsHTML = '';
+          res.top_shap_features.forEach(f => {
+            const isPos = f.shap_value > 0;
+            const cls = isPos ? 'shap-val-pos' : 'shap-val-neg';
+            shapRowsHTML += `
+              <div class="shap-row" title="${f.narrative}">
+                <span>${f.display_name}: <strong>${f.value}</strong></span>
+                <span class="${cls}">${f.shap_value > 0 ? '+' : ''}${f.shap_value.toFixed(2)}</span>
+              </div>
+            `;
+          });
+
+          container.innerHTML = `
+            <div class="shap-card">
+              <div class="shap-title">
+                <span>⚡ Live Inference Result</span>
+                <span class="popup-badge ${badgeClass}">${res.predicted_class} (${(res.confidence * 100).toFixed(1)}%)</span>
+              </div>
+              <div style="font-size:10px; color:#94a3b8; margin-bottom:4px;">Top 3 SHAP Contributing Drivers:</div>
+              ${shapRowsHTML}
+            </div>
+          `;
+        })
+        .catch(err => {
+          console.error(err);
+          container.innerHTML = `<div style="font-size:11px; color:#f87171; padding:4px;">Live inference failed. Ensure API is running on port 8001.</div>`;
+        });
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 9. Interactive Mode: "Test Live Classification" (POST /predict/hypothetical)
+    // ═══════════════════════════════════════════════════════════════════════
+    function setLiveTestMode(active) {
+      isLiveTestActive = active;
+      if (isLiveTestActive) {
+        document.body.classList.add('live-test-active');
+        btnToggleLiveMode.classList.add('active');
+        btnToggleLiveMode.innerHTML = '<span>✕ Exit Live Test</span>';
+        liveTestBanner.style.display = 'flex';
+      } else {
+        document.body.classList.remove('live-test-active');
+        btnToggleLiveMode.classList.remove('active');
+        btnToggleLiveMode.innerHTML = '<span>⚡ Test Live Classification</span>';
+        liveTestBanner.style.display = 'none';
+      }
+    }
+
+    btnToggleLiveMode.addEventListener('click', () => {
+      setLiveTestMode(!isLiveTestActive);
+    });
+
+    btnExitLiveBanner.addEventListener('click', () => {
+      setLiveTestMode(false);
+    });
+
+    // Map Click Handler for Hypothetical Classification
+    map.on('click', (e) => {
+      if (!isLiveTestActive) return;
+
+      const lat = e.latlng.lat;
+      const lon = e.latlng.lng;
+      const defaultFRP = 5.0;
+
+      // Create a temporary pulsing marker
+      const tempMarker = L.circleMarker([lat, lon], {
+        radius: 10,
+        fillColor: '#3b82f6',
+        fillOpacity: 0.85,
+        color: '#ffffff',
+        weight: 3,
+        dashArray: '3, 3'
+      }).addTo(hypotheticalLayer);
+
+      tempMarker.bindPopup(`
+        <div style="padding: 10px; text-align: center; font-size: 12px; color: #60a5fa;">
+          <div class="spinner" style="margin: 0 auto 8px auto; width: 24px; height: 24px;"></div>
+          Evaluating hypothetical point at (${lat.toFixed(4)}, ${lon.toFixed(4)})...
+        </div>
+      `, { maxWidth: 360 }).openPopup();
+
+      // Call POST /predict/hypothetical
+      fetch(`${API_BASE}/predict/hypothetical`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          latitude: lat,
+          longitude: lon,
+          frp: defaultFRP,
+          daynight: 'D',
+          confidence: 'n'
+        })
+      })
+        .then(r => {
+          if (!r.ok) throw new Error('Hypothetical classification failed');
+          return r.json();
+        })
+        .then(res => {
+          const badgeClass = getBadgeClass(res.predicted_class);
+          const fillColor = getFillColor(res.predicted_class);
+          tempMarker.setStyle({ fillColor: fillColor, color: '#60a5fa', weight: 2.5, dashArray: null });
+
+          let shapRowsHTML = '';
+          res.top_shap_features.forEach(f => {
+            const isPos = f.shap_value > 0;
+            const cls = isPos ? 'shap-val-pos' : 'shap-val-neg';
+            shapRowsHTML += `
+              <div class="shap-row" title="${f.narrative}">
+                <span>${f.display_name}: <strong>${f.value}</strong></span>
+                <span class="${cls}">${f.shap_value > 0 ? '+' : ''}${f.shap_value.toFixed(2)}</span>
+              </div>
+            `;
+          });
+
+          let probsBar = '';
+          for (const [clsName, probVal] of Object.entries(res.class_probabilities)) {
+            probsBar += `
+              <div style="display:flex; justify-content:space-between; font-size:10px; color:#94a3b8; margin-top:2px;">
+                <span>${clsName}:</span>
+                <span style="font-weight:700; color:#e2e8f0;">${(probVal * 100).toFixed(1)}%</span>
+              </div>
+            `;
+          }
+
+          const content = `
+            <div style="min-width: 280px;">
+              <div class="popup-header">
+                <span class="popup-title">⚡ Hypothetical Hotspot</span>
+                <span class="popup-badge ${badgeClass}">${res.predicted_class}</span>
+              </div>
+
+              <div class="popup-meta" style="margin-bottom: 6px;">
+                <span><strong>Coordinates:</strong> (${lat.toFixed(4)}, ${lon.toFixed(4)})</span>
+                <span><strong>Simulated FRP:</strong> ${defaultFRP.toFixed(1)} MW</span>
+              </div>
+
+              <!-- Computed Local Distances -->
+              <div class="popup-meta" style="color: #cbd5e1; font-size: 11px; background: rgba(255,255,255,0.04); padding: 6px; border-radius: 6px;">
+                <span><strong>Dist Industrial:</strong> ${res.distance_to_industrial_m.toLocaleString()} m</span>
+                <span><strong>Dist Farmland:</strong> ${res.distance_to_farmland_m.toLocaleString()} m</span>
+              </div>
+
+              <!-- SHAP Feature Drivers -->
+              <div class="shap-card">
+                <div class="shap-title">
+                  <span>Top 3 SHAP Drivers</span>
+                  <span style="color:#60a5fa;">${(res.confidence * 100).toFixed(1)}% Conf</span>
+                </div>
+                ${shapRowsHTML}
+              </div>
+
+              <!-- Probabilities Breakdown -->
+              <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.1);">
+                <div style="font-size: 10px; font-weight:700; color: #94a3b8; text-transform: uppercase;">Class Probabilities:</div>
+                ${probsBar}
+              </div>
+
+              <div style="font-size:10px; color:#64748b; margin-top:8px; text-align:center;">
+                Computed via local cached OSM polygons & median imputation (0 external API calls).
+              </div>
+            </div>
+          `;
+
+          tempMarker.setPopupContent(content);
+        })
+        .catch(err => {
+          console.error(err);
+          tempMarker.setPopupContent(`
+            <div style="color:#f87171; font-size:12px; padding:10px;">
+              Hypothetical prediction failed.<br>
+              Ensure FastAPI is running: <code>uvicorn api:app --port 8001</code>
+            </div>
+          `);
+        });
+    });
   </script>
 </body>
 
