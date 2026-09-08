@@ -6,14 +6,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GeoFlare Dashboard — AI & Rule-Based Fire & Industrial Hotspot Classification</title>
   <meta name="description"
-    content="Interactive Leaflet map of NASA FIRMS thermal hotspots classified using both OSM spatial rules and trained XGBoost ML models, highlighting disagreements and FRP anomalies." />
+    content="Interactive Leaflet map of NASA FIRMS thermal hotspots classified using both OSM spatial rules and trained XGBoost ML models, highlighting disagreements, FRP anomalies, and temporal escalation." />
 
   <!-- ─── Leaflet CSS (the map library) ─── -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
   <!-- ─── Google Fonts: Inter ─── -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
   <style>
     :root {
@@ -24,10 +24,12 @@
       --color-unknown: #a855f7;
       --color-alert-border: #f39c12;
       --color-disagreement: #facc15;
-      --color-panel-bg: rgba(15, 23, 42, 0.90);
-      --color-panel-border: rgba(255, 255, 255, 0.10);
+      --color-escalating: #ec4899;
+      --color-panel-bg: rgba(15, 23, 42, 0.92);
+      --color-panel-border: rgba(255, 255, 255, 0.12);
       --color-text: #f1f5f9;
       --color-text-muted: #94a3b8;
+      --color-primary: #3b82f6;
       --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
@@ -50,29 +52,29 @@
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
-       STATS & CONTROL PANEL
+       STATS & CONTROL PANEL (Top-Left)
        ═══════════════════════════════════════════════════════════════════════
     */
     #stats-panel {
       position: absolute;
-      top: 12px;
-      left: 56px;
+      top: 14px;
+      left: 14px;
       z-index: 1000;
       background: var(--color-panel-bg);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
       border: 1px solid var(--color-panel-border);
       border-radius: 14px;
       padding: 16px 20px;
       color: var(--color-text);
       min-width: 250px;
       max-width: 290px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
-      transition: transform 0.2s ease;
+      box-shadow: 0 10px 36px rgba(0, 0, 0, 0.55);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
 
     #stats-panel:hover {
-      transform: translateY(-2px);
+      box-shadow: 0 14px 44px rgba(0, 0, 0, 0.65);
     }
 
     #stats-panel h2 {
@@ -89,11 +91,11 @@
 
     .badge-ml {
       font-size: 10px;
-      padding: 2px 6px;
+      padding: 2px 7px;
       border-radius: 4px;
       background: rgba(250, 204, 21, 0.2);
       color: #fde047;
-      font-weight: 600;
+      font-weight: 700;
       border: 1px solid rgba(250, 204, 21, 0.4);
     }
 
@@ -176,22 +178,272 @@
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
-       LEGEND (bottom-right)
+       TIME SLIDER & TIMELINE CONTROLLER (Bottom-Center)
+       ═══════════════════════════════════════════════════════════════════════
+    */
+    #timeline-container {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      width: calc(100% - 440px);
+      max-width: 660px;
+      min-width: 380px;
+      background: var(--color-panel-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--color-panel-border);
+      border-radius: 16px;
+      padding: 14px 20px;
+      color: var(--color-text);
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      user-select: none;
+      animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translate(-50%, 15px); }
+      to { opacity: 1; transform: translate(-50%, 0); }
+    }
+
+    .timeline-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .timeline-title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .timeline-icon {
+      font-size: 14px;
+    }
+
+    .timeline-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--color-text-muted);
+    }
+
+    .timeline-date-display {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 4px 10px;
+    }
+
+    .timeline-date-label {
+      font-size: 11px;
+      color: var(--color-text-muted);
+      font-weight: 600;
+    }
+
+    .timeline-date-val {
+      font-size: 13px;
+      font-weight: 700;
+      color: #60a5fa;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.5px;
+    }
+
+    .timeline-count-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 12px;
+      background: rgba(96, 165, 250, 0.18);
+      color: #93c5fd;
+      border: 1px solid rgba(96, 165, 250, 0.3);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Mode toggle pill switch */
+    .timeline-mode-toggle {
+      display: flex;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 2px;
+      gap: 2px;
+    }
+
+    .mode-btn {
+      background: transparent;
+      border: none;
+      color: var(--color-text-muted);
+      font-family: var(--font);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .mode-btn:hover {
+      color: #fff;
+    }
+
+    .mode-btn.active {
+      background: #2563eb;
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4);
+    }
+
+    /* Controls bar */
+    .timeline-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .timeline-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: var(--font);
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+      user-select: none;
+    }
+
+    .timeline-btn:hover {
+      background: rgba(255, 255, 255, 0.16);
+      transform: translateY(-1px);
+    }
+
+    .timeline-btn:active {
+      transform: translateY(0);
+    }
+
+    .play-btn {
+      padding: 6px 14px;
+      min-width: 82px;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      border-color: #3b82f6;
+      box-shadow: 0 3px 12px rgba(37, 99, 235, 0.35);
+    }
+
+    .play-btn:hover {
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      box-shadow: 0 4px 16px rgba(59, 130, 246, 0.45);
+    }
+
+    .play-btn.playing {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      border-color: #f87171;
+      box-shadow: 0 3px 12px rgba(239, 68, 68, 0.35);
+    }
+
+    .icon-btn {
+      width: 32px;
+      height: 32px;
+      font-size: 11px;
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+
+    .timeline-slider-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    /* Styled Range Slider */
+    #time-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.16);
+      outline: none;
+      cursor: pointer;
+      position: relative;
+      transition: background 0.15s ease;
+    }
+
+    #time-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #60a5fa;
+      border: 2.5px solid #0f172a;
+      box-shadow: 0 0 10px rgba(96, 165, 250, 0.8);
+      cursor: grab;
+      transition: transform 0.12s ease, background 0.12s ease;
+    }
+
+    #time-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.22);
+      background: #93c5fd;
+      box-shadow: 0 0 14px rgba(147, 197, 253, 0.9);
+    }
+
+    #time-slider::-webkit-slider-thumb:active {
+      cursor: grabbing;
+      transform: scale(1.1);
+    }
+
+    #time-slider::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #60a5fa;
+      border: 2.5px solid #0f172a;
+      box-shadow: 0 0 10px rgba(96, 165, 250, 0.8);
+      cursor: grab;
+    }
+
+    .timeline-range-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--color-text-muted);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       LEGEND (Bottom-Right)
        ═══════════════════════════════════════════════════════════════════════
     */
     #legend {
       position: absolute;
       bottom: 24px;
-      right: 12px;
+      right: 14px;
       z-index: 1000;
       background: var(--color-panel-bg);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
       border: 1px solid var(--color-panel-border);
       border-radius: 14px;
       padding: 14px 18px;
       color: var(--color-text);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      box-shadow: 0 10px 36px rgba(0, 0, 0, 0.5);
       min-width: 210px;
     }
 
@@ -233,18 +485,18 @@
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
-       POPUP STYLING WITH SIDE-BY-SIDE COMPARISON
+       POPUP STYLING WITH SIDE-BY-SIDE COMPARISON & ESCALATION
        ═══════════════════════════════════════════════════════════════════════
     */
     .leaflet-popup-content-wrapper {
       background: var(--color-panel-bg) !important;
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
       border: 1px solid var(--color-panel-border) !important;
       border-radius: 14px !important;
       color: var(--color-text) !important;
       font-family: var(--font) !important;
-      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5) !important;
+      box-shadow: 0 14px 44px rgba(0, 0, 0, 0.6) !important;
     }
 
     .leaflet-popup-tip {
@@ -411,7 +663,7 @@
   <!-- Map container -->
   <div id="map"></div>
 
-  <!-- Stats & Controls Panel -->
+  <!-- Stats & Controls Panel (Top-Left) -->
   <div id="stats-panel">
     <h2>
       <span>GeoFlare Hotspots</span>
@@ -419,7 +671,7 @@
     </h2>
 
     <div class="stat-row">
-      <span>Total Hotspots</span>
+      <span>Visible Hotspots</span>
       <span class="stat-count" id="stat-total">0</span>
     </div>
 
@@ -487,7 +739,53 @@
     </div>
   </div>
 
-  <!-- Legend -->
+  <!-- Time Slider Controller (Bottom-Center) -->
+  <div id="timeline-container">
+    <div class="timeline-header">
+      <div class="timeline-title-group">
+        <span class="timeline-icon">⏱</span>
+        <span class="timeline-title">Temporal Buildup</span>
+      </div>
+
+      <div class="timeline-date-display">
+        <span class="timeline-date-label">Date:</span>
+        <span class="timeline-date-val" id="timeline-date-val">2026-03-01</span>
+        <span class="timeline-count-badge" id="timeline-count-badge">0 visible</span>
+      </div>
+
+      <!-- Mode Toggle: Cumulative vs Single Day -->
+      <div class="timeline-mode-toggle">
+        <button id="btn-mode-cumulative" class="mode-btn active" title="Detections up to selected date stay visible (persistent clusters build up)">Cumulative</button>
+        <button id="btn-mode-singleday" class="mode-btn" title="Only show detections for the exact selected date">Single Day</button>
+      </div>
+    </div>
+
+    <div class="timeline-controls">
+      <!-- Play / Pause Button -->
+      <button id="btn-play-pause" class="timeline-btn play-btn" title="Auto-advance timeline (150ms per day)">
+        <span id="play-icon">▶</span>
+        <span id="play-text">Play</span>
+      </button>
+
+      <!-- Step Navigation Buttons -->
+      <button id="btn-prev-day" class="timeline-btn icon-btn" title="Previous Day">◀</button>
+
+      <!-- Interactive Range Slider -->
+      <div class="timeline-slider-wrapper">
+        <input type="range" id="time-slider" min="0" max="0" value="0" step="1" />
+        <div class="timeline-range-labels">
+          <span id="slider-min-date">2026-03-01</span>
+          <span id="slider-progress-text">Day 1</span>
+          <span id="slider-max-date">2026-08-26</span>
+        </div>
+      </div>
+
+      <button id="btn-next-day" class="timeline-btn icon-btn" title="Next Day">▶</button>
+      <button id="btn-reset-timeline" class="timeline-btn icon-btn" title="Rewind to Start / Jump to End">↺</button>
+    </div>
+  </div>
+
+  <!-- Legend (Bottom-Right) -->
   <div id="legend">
     <h3>Legend</h3>
     <div class="legend-item">
@@ -520,7 +818,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
-    // 1. Initialize Map centered on Korba-Raigarh belt
+    // 1. Initialize Map centered on Korba-Raigarh industrial belt
     const map = L.map('map').setView([22.35, 82.7], 10);
 
     // Dark-themed tile layer
@@ -529,13 +827,36 @@
       maxZoom: 19
     }).addTo(map);
 
-    // 2. Layer Groups for Toggling
+    // 2. Layer Groups for Hotspot Classes
     const industrialLayer = L.layerGroup().addTo(map);
     const naturalLayer = L.layerGroup().addTo(map);
     const otherLayer = L.layerGroup().addTo(map);
 
-    // Keep all markers referenced for filter switching
+    // Master list of all marker objects
     const allMarkers = [];
+
+    // Timeline state
+    let calendarDates = [];
+    let currentDateIndex = 0;
+    let isCumulative = true;
+    let playInterval = null;
+    let isPlaying = false;
+
+    // UI Elements
+    const timeSlider = document.getElementById('time-slider');
+    const dateValLabel = document.getElementById('timeline-date-val');
+    const countBadge = document.getElementById('timeline-count-badge');
+    const progressText = document.getElementById('slider-progress-text');
+    const minDateLabel = document.getElementById('slider-min-date');
+    const maxDateLabel = document.getElementById('slider-max-date');
+    const playPauseBtn = document.getElementById('btn-play-pause');
+    const playIcon = document.getElementById('play-icon');
+    const playText = document.getElementById('play-text');
+    const btnModeCumulative = document.getElementById('btn-mode-cumulative');
+    const btnModeSingleDay = document.getElementById('btn-mode-singleday');
+    const btnPrevDay = document.getElementById('btn-prev-day');
+    const btnNextDay = document.getElementById('btn-next-day');
+    const btnResetTimeline = document.getElementById('btn-reset-timeline');
 
     // Color helpers
     function getBadgeClass(label) {
@@ -556,41 +877,67 @@
       return '#a855f7';
     }
 
-    // 3. Load firms_final_ml.geojson
+    // Generate chronological list of calendar dates between min and max
+    function generateCalendarDates(startDateStr, endDateStr) {
+      const dates = [];
+      const current = new Date(startDateStr);
+      const end = new Date(endDateStr);
+
+      while (current <= end) {
+        const yyyy = current.getFullYear();
+        const mm = String(current.getMonth() + 1).padStart(2, '0');
+        const dd = String(current.getDate()).padStart(2, '0');
+        dates.push(`${yyyy}-${mm}-${dd}`);
+        current.setDate(current.getDate() + 1);
+      }
+      return dates;
+    }
+
+    // 3. Load firms_final_ml.geojson (or fallback)
     const geojsonUrl = 'data/firms_final_ml.geojson';
 
     fetch(geojsonUrl)
       .then(response => {
         if (!response.ok) {
-          // Fallback to firms_final.geojson if ml version not found
           console.warn('firms_final_ml.geojson not found, falling back to firms_final.geojson');
           return fetch('data/firms_final.geojson').then(r => r.json());
         }
         return response.json();
       })
       .then(geojson => {
-        let total = 0, industrial = 0, natural = 0, agri = 0, unknown = 0;
-        let disagreements = 0, alerts = 0;
+        // Collect all dates to establish timeline boundaries
+        const rawDates = geojson.features
+          .map(f => f.properties.acq_date)
+          .filter(Boolean)
+          .sort();
 
+        if (rawDates.length > 0) {
+          const minDate = rawDates[0];
+          const maxDate = rawDates[rawDates.length - 1];
+          calendarDates = generateCalendarDates(minDate, maxDate);
+        } else {
+          calendarDates = ['2026-03-01'];
+        }
+
+        minDateLabel.textContent = calendarDates[0];
+        maxDateLabel.textContent = calendarDates[calendarDates.length - 1];
+
+        timeSlider.min = 0;
+        timeSlider.max = calendarDates.length - 1;
+        // Start at index 0 (cumulative build-up from beginning)
+        currentDateIndex = 0;
+        timeSlider.value = currentDateIndex;
+
+        // Process GeoJSON features into Leaflet CircleMarkers
         geojson.features.forEach(feature => {
           const p = feature.properties;
-          total++;
-
           const ruleLabel = p.final_label || p.class_label || 'Unknown';
           const mlLabel = p.ml_predicted_label || ruleLabel;
           const isDisagreement = Boolean(p.ml_disagreement || (ruleLabel !== mlLabel));
           const isAlert = p.alert_flag === 'Abnormal spike' || (p.frp_deviation && p.frp_deviation > 2.5);
           const mlConf = p.ml_confidence !== undefined ? (p.ml_confidence * 100).toFixed(1) : 'N/A';
-
-          // Class statistics
           const effLabel = mlLabel;
-          if (effLabel.includes('Industrial')) industrial++;
-          else if (effLabel.includes('Natural')) natural++;
-          else if (effLabel.includes('Agricultural')) agri++;
-          else unknown++;
-
-          if (isDisagreement) disagreements++;
-          if (isAlert) alerts++;
+          const acqDate = p.acq_date || 'Unknown';
 
           // Geometry
           const coords = feature.geometry.coordinates; // [lon, lat]
@@ -605,7 +952,6 @@
           // Border & Stroke logic
           let borderColor, borderWeight, dashArray;
           if (isDisagreement) {
-            // Prominent dashed border for ML disagreements
             borderColor = '#facc15';
             borderWeight = 3.5;
             dashArray = '4, 4';
@@ -636,10 +982,24 @@
             ? `${Number(p.frp_deviation).toFixed(2)}× cluster avg`
             : 'N/A (single/noise point)';
 
+          const escStatus = p.escalation_status || 'Stable';
+          let escBadge = '';
+          if (escStatus === 'Escalating') {
+            escBadge = '<span class="popup-badge" style="background:rgba(236,72,153,0.25); color:#f472b6; border:1px solid #ec4899; margin-left:6px;">📈 Escalating</span>';
+          } else if (escStatus === 'Abnormal') {
+            escBadge = '<span class="popup-badge" style="background:rgba(245,158,11,0.25); color:#fbbf24; border:1px solid #f59e0b; margin-left:6px;">⚠ FRP Spike</span>';
+          }
+
+          let riskBadge = '';
+          if (p.risk_score) {
+            const riskColor = p.risk_score === 'Critical' ? '#ef4444' : (p.risk_score === 'High' ? '#f97316' : (p.risk_score === 'Medium' ? '#eab308' : '#22c55e'));
+            riskBadge = `<span class="popup-badge" style="background:${riskColor}25; color:${riskColor}; border:1px solid ${riskColor}; font-weight:700;">Risk: ${p.risk_score}</span>`;
+          }
+
           let popupHTML = `
             <div class="popup-header">
-              <span class="popup-title">Hotspot Detections</span>
-              ${isAlert ? '<span class="popup-badge" style="background:rgba(245,158,11,0.25); color:#fbbf24; border:1px solid #f59e0b;">⚠ FRP Spike</span>' : ''}
+              <span class="popup-title">Hotspot Details</span>
+              <div>${riskBadge}${escBadge}</div>
             </div>
 
             <!-- Side-by-Side Classification Comparison -->
@@ -667,7 +1027,7 @@
             }
 
             <div class="popup-meta">
-              <span><strong>Date:</strong> ${p.acq_date || 'N/A'}</span>
+              <span><strong>Date:</strong> ${acqDate}</span>
               <span><strong>FRP:</strong> ${p.frp ? Number(p.frp).toFixed(1) : 'N/A'} MW</span>
             </div>
             <div class="popup-meta" style="color: var(--color-text-muted); font-size: 11px;">
@@ -675,38 +1035,37 @@
               <span>${frpDevStr}</span>
             </div>
 
+            ${p.distance_to_residential_m !== undefined ? `
+              <div class="popup-meta" style="color: #cbd5e1; font-size: 11px; margin-top: 4px;">
+                <span><strong>Residential Dist:</strong> ${Number(p.distance_to_residential_m).toFixed(0)} m</span>
+                <span><strong>Cluster:</strong> ${p.cluster_id !== undefined ? p.cluster_id : 'N/A'}</span>
+              </div>` : ''}
+
             <div class="popup-evidence">
               <strong style="color: #cbd5e1;">Evidence / Context:</strong><br>
               ${p.evidence || 'Cluster-based spatial and temporal persistence features.'}
             </div>
           `;
 
-          marker.bindPopup(popupHTML, { maxWidth: 340 });
+          marker.bindPopup(popupHTML, { maxWidth: 350 });
 
-          // Categorize marker
+          // Categorize marker metadata for combined filtering
           marker.geoData = {
+            acq_date: acqDate,
             isIndustrial: effLabel.includes('Industrial'),
             isNatural: effLabel.includes('Natural'),
+            isAgri: effLabel.includes('Agricultural'),
+            isUnknown: !effLabel.includes('Industrial') && !effLabel.includes('Natural') && !effLabel.includes('Agricultural'),
             isOther: !effLabel.includes('Industrial') && !effLabel.includes('Natural'),
-            isDisagreement: isDisagreement
+            isDisagreement: isDisagreement,
+            isAlert: isAlert
           };
 
           allMarkers.push(marker);
-
-          // Add to initial layer
-          if (marker.geoData.isIndustrial) industrialLayer.addLayer(marker);
-          else if (marker.geoData.isNatural) naturalLayer.addLayer(marker);
-          else otherLayer.addLayer(marker);
         });
 
-        // Update Stats Panel
-        document.getElementById('stat-total').textContent = total.toLocaleString();
-        document.getElementById('stat-industrial').textContent = industrial.toLocaleString();
-        document.getElementById('stat-natural').textContent = natural.toLocaleString();
-        document.getElementById('stat-agri').textContent = agri.toLocaleString();
-        document.getElementById('stat-unknown').textContent = unknown.toLocaleString();
-        document.getElementById('stat-disagreements').textContent = disagreements.toLocaleString();
-        document.getElementById('stat-alerts').textContent = alerts.toLocaleString();
+        // Initialize display with current date
+        updateTimelineView();
 
         // Hide Loading Overlay
         document.getElementById('loading').classList.add('hidden');
@@ -723,27 +1082,188 @@
            </div>`;
       });
 
-    // 4. Filtering Logic
+    // 4. Combined Filtering & Rendering Logic
     function applyFilters() {
+      if (calendarDates.length === 0) return;
+
+      const selectedDate = calendarDates[currentDateIndex];
       const showInd = document.getElementById('chk-industrial').checked;
       const showNat = document.getElementById('chk-natural').checked;
       const showOther = document.getElementById('chk-other').checked;
       const disagreementsOnly = document.getElementById('chk-disagreements-only').checked;
 
+      // Clear all layers
       industrialLayer.clearLayers();
       naturalLayer.clearLayers();
       otherLayer.clearLayers();
 
+      let visibleTotal = 0;
+      let visibleInd = 0;
+      let visibleNat = 0;
+      let visibleAgri = 0;
+      let visibleUnknown = 0;
+      let visibleDisagreements = 0;
+      let visibleAlerts = 0;
+
       allMarkers.forEach(m => {
         const d = m.geoData;
+
+        // Date Condition
+        const dateMatch = isCumulative
+          ? (d.acq_date <= selectedDate)
+          : (d.acq_date === selectedDate);
+
+        if (!dateMatch) return;
+
+        // Disagreement filter
         if (disagreementsOnly && !d.isDisagreement) return;
 
-        if (d.isIndustrial && showInd) industrialLayer.addLayer(m);
-        else if (d.isNatural && showNat) naturalLayer.addLayer(m);
-        else if (d.isOther && showOther) otherLayer.addLayer(m);
+        // Category filter & Layer addition
+        let added = false;
+        if (d.isIndustrial && showInd) {
+          industrialLayer.addLayer(m);
+          visibleInd++;
+          added = true;
+        } else if (d.isNatural && showNat) {
+          naturalLayer.addLayer(m);
+          visibleNat++;
+          added = true;
+        } else if (d.isOther && showOther) {
+          otherLayer.addLayer(m);
+          if (d.isAgri) visibleAgri++;
+          else visibleUnknown++;
+          added = true;
+        }
+
+        if (added) {
+          visibleTotal++;
+          if (d.isDisagreement) visibleDisagreements++;
+          if (d.isAlert) visibleAlerts++;
+        }
       });
+
+      // Update Stats Panel
+      document.getElementById('stat-total').textContent = visibleTotal.toLocaleString();
+      document.getElementById('stat-industrial').textContent = visibleInd.toLocaleString();
+      document.getElementById('stat-natural').textContent = visibleNat.toLocaleString();
+      document.getElementById('stat-agri').textContent = visibleAgri.toLocaleString();
+      document.getElementById('stat-unknown').textContent = visibleUnknown.toLocaleString();
+      document.getElementById('stat-disagreements').textContent = visibleDisagreements.toLocaleString();
+      document.getElementById('stat-alerts').textContent = visibleAlerts.toLocaleString();
+
+      // Update Timeline Card
+      dateValLabel.textContent = selectedDate;
+      countBadge.textContent = `${visibleTotal.toLocaleString()} visible`;
+      progressText.textContent = `Day ${currentDateIndex + 1} of ${calendarDates.length}`;
+
+      // Update Slider dynamic track gradient
+      const pct = (currentDateIndex / (calendarDates.length - 1)) * 100;
+      timeSlider.style.background = `linear-gradient(to right, #3b82f6 0%, #8b5cf6 ${pct}%, rgba(255,255,255,0.16) ${pct}%, rgba(255,255,255,0.16) 100%)`;
     }
 
+    function updateTimelineView() {
+      applyFilters();
+    }
+
+    // 5. Timeline Interactions & Playback
+    timeSlider.addEventListener('input', (e) => {
+      currentDateIndex = parseInt(e.target.value, 10);
+      updateTimelineView();
+    });
+
+    function togglePlayPause() {
+      if (isPlaying) {
+        pauseTimeline();
+      } else {
+        startTimeline();
+      }
+    }
+
+    function startTimeline() {
+      if (calendarDates.length === 0) return;
+      // If at the end, restart from beginning
+      if (currentDateIndex >= calendarDates.length - 1) {
+        currentDateIndex = 0;
+        timeSlider.value = currentDateIndex;
+        updateTimelineView();
+      }
+
+      isPlaying = true;
+      playPauseBtn.classList.add('playing');
+      playIcon.textContent = '❚❚';
+      playText.textContent = 'Pause';
+
+      playInterval = setInterval(() => {
+        if (currentDateIndex < calendarDates.length - 1) {
+          currentDateIndex++;
+          timeSlider.value = currentDateIndex;
+          updateTimelineView();
+        } else {
+          pauseTimeline();
+        }
+      }, 150); // ~150ms per step as requested
+    }
+
+    function pauseTimeline() {
+      isPlaying = false;
+      if (playInterval) {
+        clearInterval(playInterval);
+        playInterval = null;
+      }
+      playPauseBtn.classList.remove('playing');
+      playIcon.textContent = '▶';
+      playText.textContent = 'Play';
+    }
+
+    playPauseBtn.addEventListener('click', togglePlayPause);
+
+    // Step Prev/Next buttons
+    btnPrevDay.addEventListener('click', () => {
+      if (currentDateIndex > 0) {
+        currentDateIndex--;
+        timeSlider.value = currentDateIndex;
+        updateTimelineView();
+      }
+    });
+
+    btnNextDay.addEventListener('click', () => {
+      if (currentDateIndex < calendarDates.length - 1) {
+        currentDateIndex++;
+        timeSlider.value = currentDateIndex;
+        updateTimelineView();
+      }
+    });
+
+    // Reset button toggles between start and end
+    btnResetTimeline.addEventListener('click', () => {
+      pauseTimeline();
+      if (currentDateIndex === 0) {
+        currentDateIndex = calendarDates.length - 1; // Jump to end
+      } else {
+        currentDateIndex = 0; // Rewind to start
+      }
+      timeSlider.value = currentDateIndex;
+      updateTimelineView();
+    });
+
+    // Mode Toggle: Cumulative vs Single Day
+    btnModeCumulative.addEventListener('click', () => {
+      if (isCumulative) return;
+      isCumulative = true;
+      btnModeCumulative.classList.add('active');
+      btnModeSingleDay.classList.remove('active');
+      updateTimelineView();
+    });
+
+    btnModeSingleDay.addEventListener('click', () => {
+      if (!isCumulative) return;
+      isCumulative = false;
+      btnModeSingleDay.classList.add('active');
+      btnModeCumulative.classList.remove('active');
+      updateTimelineView();
+    });
+
+    // Checkbox Listeners
     document.getElementById('chk-industrial').addEventListener('change', applyFilters);
     document.getElementById('chk-natural').addEventListener('change', applyFilters);
     document.getElementById('chk-other').addEventListener('change', applyFilters);
