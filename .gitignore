@@ -3,9 +3,11 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+.ipynb_checkpoints/
 
 # Cache
 cache/
+data_punjab/cache/
 
 # Windows metadata
 *:Zone.Identifier
@@ -17,8 +19,14 @@ cache/
 *.tmp
 *.log
 
-# Environment/secrets
+# Environment/secrets/credentials
+*.env
 .env
+config.toml
+.sentinelhub/
+sentinelhub_config*
+*secret*
+*credential*
 
 # Large satellite imagery
 *.tif

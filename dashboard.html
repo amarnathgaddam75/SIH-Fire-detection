@@ -1,37 +1,31 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FIRMS Hotspot Dashboard — Industrial vs Natural Fire</title>
-  <meta name="description" content="Interactive Leaflet map of NASA FIRMS thermal hotspots classified as Industrial or Natural Fire, with FRP anomaly detection." />
+  <title>GeoFlare Dashboard — AI & Rule-Based Fire & Industrial Hotspot Classification</title>
+  <meta name="description"
+    content="Interactive Leaflet map of NASA FIRMS thermal hotspots classified using both OSM spatial rules and trained XGBoost ML models, highlighting disagreements and FRP anomalies." />
 
   <!-- ─── Leaflet CSS (the map library) ─── -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
-  <!-- ─── Google Fonts: Inter for a clean, modern look ─── -->
+  <!-- ─── Google Fonts: Inter ─── -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
   <style>
-    /* ═══════════════════════════════════════════════════════════════════════
-       CSS OVERVIEW
-       ═══════════════════════════════════════════════════════════════════════
-       The page has three layers:
-         1. The map (fills the entire screen)
-         2. A stats panel (top-left, over the map)
-         3. A legend (bottom-right, over the map)
-       We use CSS variables for consistent colors, and glassmorphism
-       (backdrop-filter: blur) for a modern translucent look.
-    */
-
     :root {
-      /* Color palette — these are reused throughout the CSS and JS */
-      --color-industrial: #e74c3c;       /* Red for industrial hotspots */
-      --color-natural: #27ae60;          /* Green for natural fires */
-      --color-alert-border: #f39c12;     /* Orange for abnormal spike border */
-      --color-panel-bg: rgba(15, 23, 42, 0.88);  /* Dark semi-transparent */
-      --color-panel-border: rgba(255, 255, 255, 0.08);
+      /* Color palette */
+      --color-industrial: #e74c3c;
+      --color-natural: #27ae60;
+      --color-agri: #f97316;
+      --color-unknown: #a855f7;
+      --color-alert-border: #f39c12;
+      --color-disagreement: #facc15;
+      --color-panel-bg: rgba(15, 23, 42, 0.90);
+      --color-panel-border: rgba(255, 255, 255, 0.10);
       --color-text: #f1f5f9;
       --color-text-muted: #94a3b8;
       --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -45,35 +39,35 @@
 
     body {
       font-family: var(--font);
+      background-color: #0b0f19;
+      color: var(--color-text);
+      overflow: hidden;
     }
 
-    /* ─── The map fills the viewport ─── */
     #map {
       width: 100vw;
       height: 100vh;
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
-       STATS PANEL (top-left)
+       STATS & CONTROL PANEL
        ═══════════════════════════════════════════════════════════════════════
-       Shows total counts and filter checkboxes.  Uses glassmorphism:
-       a dark semi-transparent background + blur, so the map shows through
-       subtly.  This is a common modern UI pattern.
     */
     #stats-panel {
       position: absolute;
       top: 12px;
-      left: 56px;           /* offset to clear Leaflet's zoom buttons */
-      z-index: 1000;        /* above the map tiles */
+      left: 56px;
+      z-index: 1000;
       background: var(--color-panel-bg);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--color-panel-border);
       border-radius: 14px;
-      padding: 18px 22px;
+      padding: 16px 20px;
       color: var(--color-text);
-      min-width: 220px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+      min-width: 250px;
+      max-width: 290px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
       transition: transform 0.2s ease;
     }
 
@@ -87,16 +81,28 @@
       text-transform: uppercase;
       letter-spacing: 1.2px;
       color: var(--color-text-muted);
-      margin-bottom: 14px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
 
-    /* Each stat row: a colored dot + label + count */
+    .badge-ml {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(250, 204, 21, 0.2);
+      color: #fde047;
+      font-weight: 600;
+      border: 1px solid rgba(250, 204, 21, 0.4);
+    }
+
     .stat-row {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 6px 0;
-      font-size: 14px;
+      padding: 4px 0;
+      font-size: 13px;
       font-weight: 500;
     }
 
@@ -116,39 +122,34 @@
     .stat-divider {
       height: 1px;
       background: var(--color-panel-border);
-      margin: 10px 0;
+      margin: 8px 0;
     }
 
-    /* ─── Filter checkboxes ─── */
-    .filter-section {
-      margin-top: 6px;
-    }
-
+    /* Filters */
     .filter-section h3 {
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 1px;
       color: var(--color-text-muted);
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
 
     .filter-row {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 4px 0;
-      font-size: 13px;
+      padding: 3px 0;
+      font-size: 12px;
       cursor: pointer;
       user-select: none;
     }
 
-    /* Custom checkbox styling — the browser default is ugly */
     .filter-row input[type="checkbox"] {
       appearance: none;
       -webkit-appearance: none;
-      width: 16px;
-      height: 16px;
+      width: 15px;
+      height: 15px;
       border: 2px solid var(--color-text-muted);
       border-radius: 4px;
       cursor: pointer;
@@ -162,14 +163,13 @@
       background: #60a5fa;
     }
 
-    /* The checkmark inside the checkbox */
     .filter-row input[type="checkbox"]:checked::after {
       content: '';
       position: absolute;
       left: 3px;
       top: 0px;
       width: 5px;
-      height: 9px;
+      height: 8px;
       border: solid #fff;
       border-width: 0 2px 2px 0;
       transform: rotate(45deg);
@@ -178,11 +178,10 @@
     /* ═══════════════════════════════════════════════════════════════════════
        LEGEND (bottom-right)
        ═══════════════════════════════════════════════════════════════════════
-       Explains what the marker colors and borders mean.
     */
     #legend {
       position: absolute;
-      bottom: 28px;
+      bottom: 24px;
       right: 12px;
       z-index: 1000;
       background: var(--color-panel-bg);
@@ -190,64 +189,62 @@
       -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--color-panel-border);
       border-radius: 14px;
-      padding: 16px 20px;
+      padding: 14px 18px;
       color: var(--color-text);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      min-width: 210px;
     }
 
     #legend h3 {
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 1px;
       color: var(--color-text-muted);
-      margin-bottom: 10px;
+      margin-bottom: 8px;
     }
 
     .legend-item {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 4px 0;
-      font-size: 13px;
+      padding: 3px 0;
+      font-size: 12px;
     }
 
-    /* Small colored circles used as legend swatches */
     .legend-swatch {
-      width: 14px;
-      height: 14px;
+      width: 13px;
+      height: 13px;
       border-radius: 50%;
       flex-shrink: 0;
     }
 
-    .legend-swatch.industrial {
-      background: var(--color-industrial);
+    .legend-swatch.industrial { background: var(--color-industrial); }
+    .legend-swatch.natural { background: var(--color-natural); }
+    .legend-swatch.agri { background: var(--color-agri); }
+    .legend-swatch.unknown { background: var(--color-unknown); }
+    .legend-swatch.disagreement {
+      background: transparent;
+      border: 2.5px dashed var(--color-disagreement);
     }
-
-    .legend-swatch.natural {
-      background: var(--color-natural);
-    }
-
     .legend-swatch.alert {
       background: transparent;
-      border: 3px solid var(--color-alert-border);
+      border: 2.5px solid var(--color-alert-border);
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
-       POPUP STYLING
+       POPUP STYLING WITH SIDE-BY-SIDE COMPARISON
        ═══════════════════════════════════════════════════════════════════════
-       Leaflet popups appear when you click a marker.  We override the
-       default white-box style to match our dark theme.
     */
     .leaflet-popup-content-wrapper {
       background: var(--color-panel-bg) !important;
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--color-panel-border) !important;
-      border-radius: 12px !important;
+      border-radius: 14px !important;
       color: var(--color-text) !important;
       font-family: var(--font) !important;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5) !important;
     }
 
     .leaflet-popup-tip {
@@ -257,64 +254,123 @@
     .leaflet-popup-content {
       margin: 14px 16px !important;
       font-size: 13px !important;
-      line-height: 1.6 !important;
+      line-height: 1.5 !important;
+    }
+
+    .leaflet-tile-pane {
+      filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9);
+    }
+
+    .popup-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
     }
 
     .popup-title {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 700;
-      margin-bottom: 6px;
     }
 
-    .popup-label {
-      color: var(--color-text-muted);
-      font-size: 11px;
+    .labels-comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 8px 0;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .label-col {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .label-col-title {
+      font-size: 10px;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      color: var(--color-text-muted);
+      letter-spacing: 0.6px;
     }
 
-    .popup-value {
+    .popup-badge {
+      display: inline-block;
+      padding: 3px 7px;
+      border-radius: 6px;
+      font-size: 11px;
       font-weight: 600;
+      text-align: center;
+      width: fit-content;
+    }
+
+    .popup-badge.industrial { background: rgba(231, 76, 60, 0.25); color: #f87171; border: 1px solid rgba(231, 76, 60, 0.5); }
+    .popup-badge.natural { background: rgba(39, 174, 96, 0.25); color: #4ade80; border: 1px solid rgba(39, 174, 96, 0.5); }
+    .popup-badge.agri { background: rgba(249, 115, 22, 0.25); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.5); }
+    .popup-badge.unknown { background: rgba(168, 85, 247, 0.25); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.5); }
+
+    .confidence-text {
+      font-size: 11px;
+      color: var(--color-text-muted);
+    }
+
+    .disagreement-banner {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      margin: 8px 0;
+      background: rgba(250, 204, 21, 0.12);
+      border: 1px dashed var(--color-disagreement);
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #fde047;
+    }
+
+    .consensus-banner {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      margin: 8px 0;
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.25);
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      color: #86efac;
+    }
+
+    .popup-meta {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 6px;
+      font-size: 12px;
     }
 
     .popup-evidence {
       margin-top: 8px;
       padding-top: 8px;
       border-top: 1px solid var(--color-panel-border);
-      font-size: 12px;
-      color: var(--color-text-muted);
-      line-height: 1.5;
-    }
-
-    .popup-badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 6px;
       font-size: 11px;
-      font-weight: 600;
+      color: var(--color-text-muted);
+      line-height: 1.4;
     }
 
-    .popup-badge.industrial {
-      background: rgba(231, 76, 60, 0.2);
-      color: #f87171;
-    }
-
-    .popup-badge.natural {
-      background: rgba(39, 174, 96, 0.2);
-      color: #4ade80;
-    }
-
-    .popup-badge.alert {
-      background: rgba(243, 156, 18, 0.2);
-      color: #fbbf24;
-    }
-
-    /* ─── Loading overlay (shown while GeoJSON fetches) ─── */
+    /* ─── Loading overlay ─── */
     #loading {
       position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
       z-index: 2000;
-      background: rgba(15, 23, 42, 0.92);
+      background: rgba(11, 15, 25, 0.94);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -330,13 +386,13 @@
     }
 
     .spinner {
-      width: 40px;
-      height: 40px;
-      border: 3px solid rgba(255,255,255,0.15);
+      width: 36px;
+      height: 36px;
+      border: 3px solid rgba(255, 255, 255, 0.15);
       border-top-color: #60a5fa;
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }
 
     @keyframes spin {
@@ -344,28 +400,26 @@
     }
   </style>
 </head>
-<body>
 
-  <!-- ─── Loading overlay ─── -->
+<body>
+  <!-- Loading overlay -->
   <div id="loading">
     <div class="spinner"></div>
-    <div>Loading hotspot data...</div>
+    <div style="font-size: 14px; font-weight: 600; letter-spacing: 0.5px;">Loading GeoFlare ML Hotspots...</div>
   </div>
 
-  <!-- ─── The map container (Leaflet renders into this div) ─── -->
+  <!-- Map container -->
   <div id="map"></div>
 
-  <!-- ═══════════════════════════════════════════════════════════════════════
-       STATS PANEL
-       ═══════════════════════════════════════════════════════════════════════
-       The counts (id="stat-total", etc.) start at 0 and get filled in by
-       JavaScript once the GeoJSON loads.
-  -->
+  <!-- Stats & Controls Panel -->
   <div id="stats-panel">
-    <h2>Hotspot Summary</h2>
+    <h2>
+      <span>GeoFlare Hotspots</span>
+      <span class="badge-ml">AI Enhanced</span>
+    </h2>
 
     <div class="stat-row">
-      <span>Total Events</span>
+      <span>Total Hotspots</span>
       <span class="stat-count" id="stat-total">0</span>
     </div>
 
@@ -384,12 +438,33 @@
     </div>
 
     <div class="stat-row">
+      <span class="stat-dot" style="background: var(--color-agri)"></span>
+      <span>Agri Burning</span>
+      <span class="stat-count" id="stat-agri">0</span>
+    </div>
+
+    <div class="stat-row">
+      <span class="stat-dot" style="background: var(--color-unknown)"></span>
+      <span>Unknown / Review</span>
+      <span class="stat-count" id="stat-unknown">0</span>
+    </div>
+
+    <div class="stat-divider"></div>
+
+    <!-- AI Disagreement Highlight -->
+    <div class="stat-row" style="color: #fde047; font-weight: 600;">
+      <span class="stat-dot" style="background: transparent; border: 2px dashed #facc15;"></span>
+      <span>ML Disagreements</span>
+      <span class="stat-count" id="stat-disagreements">0</span>
+    </div>
+
+    <div class="stat-row" style="color: #fbbf24;">
       <span class="stat-dot" style="background: var(--color-alert-border)"></span>
-      <span>Abnormal Spikes</span>
+      <span>FRP Spikes</span>
       <span class="stat-count" id="stat-alerts">0</span>
     </div>
 
-    <!-- Filter checkboxes to toggle layer visibility -->
+    <!-- Filter checkboxes -->
     <div class="stat-divider"></div>
     <div class="filter-section">
       <h3>Filters</h3>
@@ -401,13 +476,18 @@
         <input type="checkbox" id="chk-natural" checked />
         <span>Show Natural Fire</span>
       </label>
+      <label class="filter-row">
+        <input type="checkbox" id="chk-other" checked />
+        <span>Show Agri / Unknown</span>
+      </label>
+      <label class="filter-row" style="color: #fde047; font-weight: 600; margin-top: 4px;">
+        <input type="checkbox" id="chk-disagreements-only" />
+        <span>Show Disagreements Only</span>
+      </label>
     </div>
   </div>
 
-  <!-- ═══════════════════════════════════════════════════════════════════════
-       LEGEND
-       ═══════════════════════════════════════════════════════════════════════
-  -->
+  <!-- Legend -->
   <div id="legend">
     <h3>Legend</h3>
     <div class="legend-item">
@@ -419,196 +499,256 @@
       <span>Natural Fire</span>
     </div>
     <div class="legend-item">
+      <span class="legend-swatch agri"></span>
+      <span>Agricultural Burning</span>
+    </div>
+    <div class="legend-item">
+      <span class="legend-swatch unknown"></span>
+      <span>Unknown / Ambiguous</span>
+    </div>
+    <div class="legend-item">
+      <span class="legend-swatch disagreement"></span>
+      <span>ML vs Rule Disagreement</span>
+    </div>
+    <div class="legend-item">
       <span class="legend-swatch alert"></span>
-      <span>Abnormal FRP spike</span>
+      <span>Abnormal FRP Spike</span>
     </div>
   </div>
 
-  <!-- ─── Leaflet JS ─── -->
+  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
-    // ═════════════════════════════════════════════════════════════════════════
-    // JAVASCRIPT OVERVIEW
-    // ═════════════════════════════════════════════════════════════════════════
-    // This script does four things:
-    //   1. Creates a Leaflet map with a dark-themed tile layer
-    //   2. Fetches data/firms_final.geojson
-    //   3. Renders each point as a colored circle marker on the map
-    //   4. Wires up the stats panel and filter checkboxes
-    //
-    // KEY CONCEPTS FOR BEGINNERS:
-    //   - Leaflet is a JavaScript library that renders interactive maps
-    //   - A "tile layer" is the background map imagery (streets, terrain)
-    //   - A "layer group" is a collection of markers you can show/hide together
-    //   - GeoJSON is a standard format for geographic data (points, polygons)
-    //   - A "circle marker" is a dot drawn on the map at a lat/lon coordinate
-
-    // ─── 1. CREATE THE MAP ───────────────────────────────────────────────────
-    // L.map() initializes a Leaflet map inside the element with id="map".
-    // setView([lat, lon], zoom) centers it on Korba/Chhattisgarh at zoom 10.
+    // 1. Initialize Map centered on Korba-Raigarh belt
     const map = L.map('map').setView([22.35, 82.7], 10);
 
-    // Add a dark-themed tile layer from CartoDB.  Tile layers are made of
-    // 256x256 pixel images ("tiles") that the browser downloads as you pan
-    // and zoom.  {z}/{x}/{y} are replaced with the current zoom level and
-    // tile coordinates.
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a> | ' +
-                   '&copy; <a href="https://openstreetmap.org/">OSM</a>',
-      maxZoom: 18,
-      subdomains: 'abcd'
+    // Dark-themed tile layer
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 19
     }).addTo(map);
 
-    // ─── 2. LAYER GROUPS ─────────────────────────────────────────────────────
-    // We create two separate "layer groups" — one for Industrial markers and
-    // one for Natural Fire markers.  This lets us toggle them independently
-    // using the checkboxes in the stats panel.
-    //
-    // Think of a layer group like a folder: all markers inside it can be
-    // shown or hidden with a single command.
+    // 2. Layer Groups for Toggling
     const industrialLayer = L.layerGroup().addTo(map);
-    const naturalLayer    = L.layerGroup().addTo(map);
+    const naturalLayer = L.layerGroup().addTo(map);
+    const otherLayer = L.layerGroup().addTo(map);
 
-    // ─── 3. FETCH AND RENDER THE GeoJSON ─────────────────────────────────────
-    // fetch() is the modern browser API for HTTP requests.  It returns a
-    // Promise — an object that represents "a value that will arrive later".
-    // .then() runs a callback when the Promise resolves (data arrives).
-    fetch('data/firms_final.geojson')
+    // Keep all markers referenced for filter switching
+    const allMarkers = [];
+
+    // Color helpers
+    function getBadgeClass(label) {
+      if (!label) return 'unknown';
+      const l = label.toLowerCase();
+      if (l.includes('industrial')) return 'industrial';
+      if (l.includes('natural')) return 'natural';
+      if (l.includes('agri')) return 'agri';
+      return 'unknown';
+    }
+
+    function getFillColor(label) {
+      if (!label) return '#a855f7';
+      const l = label.toLowerCase();
+      if (l.includes('industrial')) return '#e74c3c';
+      if (l.includes('natural')) return '#27ae60';
+      if (l.includes('agri')) return '#f97316';
+      return '#a855f7';
+    }
+
+    // 3. Load firms_final_ml.geojson
+    const geojsonUrl = 'data/firms_final_ml.geojson';
+
+    fetch(geojsonUrl)
       .then(response => {
-        if (!response.ok) throw new Error('Failed to load GeoJSON: ' + response.status);
-        return response.json();  // Parse the JSON text into a JS object
+        if (!response.ok) {
+          // Fallback to firms_final.geojson if ml version not found
+          console.warn('firms_final_ml.geojson not found, falling back to firms_final.geojson');
+          return fetch('data/firms_final.geojson').then(r => r.json());
+        }
+        return response.json();
       })
       .then(geojson => {
-        // ── Count statistics ──
-        // We loop through all features once to count Industrial vs Natural
-        // and Abnormal spikes.  These numbers go into the stats panel.
-        let total = 0, industrial = 0, natural = 0, alerts = 0;
+        let total = 0, industrial = 0, natural = 0, agri = 0, unknown = 0;
+        let disagreements = 0, alerts = 0;
 
         geojson.features.forEach(feature => {
-          const p = feature.properties;  // shorthand
+          const p = feature.properties;
           total++;
 
-          if (p.final_label === 'Industrial') industrial++;
-          else natural++;
+          const ruleLabel = p.final_label || p.class_label || 'Unknown';
+          const mlLabel = p.ml_predicted_label || ruleLabel;
+          const isDisagreement = Boolean(p.ml_disagreement || (ruleLabel !== mlLabel));
+          const isAlert = p.alert_flag === 'Abnormal spike' || (p.frp_deviation && p.frp_deviation > 2.5);
+          const mlConf = p.ml_confidence !== undefined ? (p.ml_confidence * 100).toFixed(1) : 'N/A';
 
-          if (p.alert_flag === 'Abnormal spike') alerts++;
+          // Class statistics
+          const effLabel = mlLabel;
+          if (effLabel.includes('Industrial')) industrial++;
+          else if (effLabel.includes('Natural')) natural++;
+          else if (effLabel.includes('Agricultural')) agri++;
+          else unknown++;
 
-          // ── Create the circle marker ──
-          // GeoJSON coordinates are [longitude, latitude] but Leaflet's
-          // L.circleMarker expects [latitude, longitude].  We swap them.
-          const coords = feature.geometry.coordinates;  // [lon, lat]
-          const latLng = [coords[1], coords[0]];        // [lat, lon]
+          if (isDisagreement) disagreements++;
+          if (isAlert) alerts++;
 
-          const isIndustrial = p.final_label === 'Industrial';
-          const isAlert      = p.alert_flag === 'Abnormal spike';
+          // Geometry
+          const coords = feature.geometry.coordinates; // [lon, lat]
+          const latLng = [coords[1], coords[0]];
 
-          // Marker radius scales with FRP (fire intensity).
-          // Base radius of 4, plus frp/20, clamped between 4 and 18 pixels.
-          // Math.min/Math.max ensure the radius stays in a readable range.
-          const radius = Math.min(18, Math.max(4, 4 + p.frp / 20));
+          // Radius scaling
+          const radius = Math.min(18, Math.max(4.5, 4.5 + (p.frp || 0) / 22));
 
-          // Marker color: red for Industrial, green for Natural Fire.
-          const fillColor = isIndustrial ? '#e74c3c' : '#27ae60';
+          // Base fill color based on ML predicted class
+          const fillColor = getFillColor(mlLabel);
 
-          // Abnormal spike markers get a thick orange border to stand out.
-          // Normal markers get a thin semi-transparent white border.
-          const borderColor  = isAlert ? '#f39c12' : 'rgba(255,255,255,0.3)';
-          const borderWeight = isAlert ? 3 : 1;
+          // Border & Stroke logic
+          let borderColor, borderWeight, dashArray;
+          if (isDisagreement) {
+            // Prominent dashed border for ML disagreements
+            borderColor = '#facc15';
+            borderWeight = 3.5;
+            dashArray = '4, 4';
+          } else if (isAlert) {
+            borderColor = '#f39c12';
+            borderWeight = 3;
+            dashArray = null;
+          } else {
+            borderColor = 'rgba(255, 255, 255, 0.4)';
+            borderWeight = 1.2;
+            dashArray = null;
+          }
 
-          // L.circleMarker() draws a circle with fixed pixel radius
-          // (as opposed to L.circle which draws in real-world meters).
           const marker = L.circleMarker(latLng, {
-            radius:      radius,
-            fillColor:   fillColor,
-            fillOpacity: 0.75,
-            color:       borderColor,
-            weight:      borderWeight,
-            opacity:     1
+            radius: radius,
+            fillColor: fillColor,
+            fillOpacity: 0.78,
+            color: borderColor,
+            weight: borderWeight,
+            dashArray: dashArray,
+            opacity: 1
           });
 
-          // ── Build the popup HTML ──
-          // When you click a marker, this HTML appears in a small tooltip.
-          // It shows the classification, date, FRP, and the evidence string.
-          const labelClass = isIndustrial ? 'industrial' : 'natural';
-          const frpDev = p.frp_deviation !== null
-            ? `${p.frp_deviation.toFixed(2)}× cluster avg`
-            : 'N/A (no cluster)';
+          // Build Side-by-Side Popup
+          const ruleBadgeClass = getBadgeClass(ruleLabel);
+          const mlBadgeClass = getBadgeClass(mlLabel);
+          const frpDevStr = (p.frp_deviation !== null && p.frp_deviation !== undefined)
+            ? `${Number(p.frp_deviation).toFixed(2)}× cluster avg`
+            : 'N/A (single/noise point)';
 
           let popupHTML = `
-            <div class="popup-title">
-              <span class="popup-badge ${labelClass}">${p.final_label}</span>
-              ${isAlert ? '<span class="popup-badge alert">⚠ Spike</span>' : ''}
+            <div class="popup-header">
+              <span class="popup-title">Hotspot Detections</span>
+              ${isAlert ? '<span class="popup-badge" style="background:rgba(245,158,11,0.25); color:#fbbf24; border:1px solid #f59e0b;">⚠ FRP Spike</span>' : ''}
             </div>
-            <div style="margin-top: 8px;">
-              <span class="popup-label">Date</span><br>
-              <span class="popup-value">${p.acq_date}</span>
+
+            <!-- Side-by-Side Classification Comparison -->
+            <div class="labels-comparison">
+              <div class="label-col">
+                <span class="label-col-title">Rule-Based</span>
+                <span class="popup-badge ${ruleBadgeClass}">${ruleLabel}</span>
+              </div>
+              <div class="label-col">
+                <span class="label-col-title">ML XGBoost</span>
+                <span class="popup-badge ${mlBadgeClass}">${mlLabel}</span>
+                <span class="confidence-text">${mlConf}% conf</span>
+              </div>
             </div>
-            <div style="margin-top: 6px;">
-              <span class="popup-label">FRP (Fire Radiative Power)</span><br>
-              <span class="popup-value">${p.frp.toFixed(1)} MW</span>
-              <span style="color: var(--color-text-muted); font-size: 12px;">
-                (${frpDev})
-              </span>
+
+            ${isDisagreement
+              ? `<div class="disagreement-banner">
+                   <span>⚠</span>
+                   <span>Model Disagrees with Rule (${ruleLabel} → ${mlLabel})</span>
+                 </div>`
+              : `<div class="consensus-banner">
+                   <span>✓</span>
+                   <span>Consensus: Rule & ML Model Agree</span>
+                 </div>`
+            }
+
+            <div class="popup-meta">
+              <span><strong>Date:</strong> ${p.acq_date || 'N/A'}</span>
+              <span><strong>FRP:</strong> ${p.frp ? Number(p.frp).toFixed(1) : 'N/A'} MW</span>
             </div>
+            <div class="popup-meta" style="color: var(--color-text-muted); font-size: 11px;">
+              <span><strong>Persistence:</strong> ${p.distinct_days || 0} days</span>
+              <span>${frpDevStr}</span>
+            </div>
+
             <div class="popup-evidence">
-              <span class="popup-label">Evidence</span><br>
-              ${p.evidence}
+              <strong style="color: #cbd5e1;">Evidence / Context:</strong><br>
+              ${p.evidence || 'Cluster-based spatial and temporal persistence features.'}
             </div>
           `;
 
-          marker.bindPopup(popupHTML, { maxWidth: 320 });
+          marker.bindPopup(popupHTML, { maxWidth: 340 });
 
-          // Add the marker to the appropriate layer group so it can be
-          // toggled on/off with the checkbox.
-          if (isIndustrial) {
-            industrialLayer.addLayer(marker);
-          } else {
-            naturalLayer.addLayer(marker);
-          }
+          // Categorize marker
+          marker.geoData = {
+            isIndustrial: effLabel.includes('Industrial'),
+            isNatural: effLabel.includes('Natural'),
+            isOther: !effLabel.includes('Industrial') && !effLabel.includes('Natural'),
+            isDisagreement: isDisagreement
+          };
+
+          allMarkers.push(marker);
+
+          // Add to initial layer
+          if (marker.geoData.isIndustrial) industrialLayer.addLayer(marker);
+          else if (marker.geoData.isNatural) naturalLayer.addLayer(marker);
+          else otherLayer.addLayer(marker);
         });
 
-        // ── Update the stats panel numbers ──
-        document.getElementById('stat-total').textContent      = total.toLocaleString();
+        // Update Stats Panel
+        document.getElementById('stat-total').textContent = total.toLocaleString();
         document.getElementById('stat-industrial').textContent = industrial.toLocaleString();
-        document.getElementById('stat-natural').textContent    = natural.toLocaleString();
-        document.getElementById('stat-alerts').textContent     = alerts.toLocaleString();
+        document.getElementById('stat-natural').textContent = natural.toLocaleString();
+        document.getElementById('stat-agri').textContent = agri.toLocaleString();
+        document.getElementById('stat-unknown').textContent = unknown.toLocaleString();
+        document.getElementById('stat-disagreements').textContent = disagreements.toLocaleString();
+        document.getElementById('stat-alerts').textContent = alerts.toLocaleString();
 
-        // ── Hide the loading overlay ──
+        // Hide Loading Overlay
         document.getElementById('loading').classList.add('hidden');
       })
       .catch(error => {
         console.error('Error loading GeoJSON:', error);
         document.getElementById('loading').innerHTML =
-          `<div style="color: #f87171; font-size: 16px;">
-             Failed to load data.<br>
-             <span style="font-size: 13px; color: #94a3b8;">
-               Make sure data/firms_final.geojson exists.<br>
-               Run: python3 finalize_and_export.py
+          `<div style="color: #f87171; font-size: 16px; text-align: center; padding: 20px;">
+             Failed to load ML GeoJSON.<br>
+             <span style="font-size: 13px; color: #94a3b8; display: block; margin-top: 8px;">
+               Ensure data/firms_final_ml.geojson exists.<br>
+               Run: <code>python3 add_ml_predictions.py</code>
              </span>
            </div>`;
       });
 
-    // ─── 4. FILTER CHECKBOXES ────────────────────────────────────────────────
-    // When a checkbox is toggled, we add or remove the corresponding layer
-    // group from the map.  This is much faster than recreating markers
-    // because the markers already exist in memory — we just show/hide the
-    // entire group.
-    document.getElementById('chk-industrial').addEventListener('change', function() {
-      if (this.checked) {
-        map.addLayer(industrialLayer);
-      } else {
-        map.removeLayer(industrialLayer);
-      }
-    });
+    // 4. Filtering Logic
+    function applyFilters() {
+      const showInd = document.getElementById('chk-industrial').checked;
+      const showNat = document.getElementById('chk-natural').checked;
+      const showOther = document.getElementById('chk-other').checked;
+      const disagreementsOnly = document.getElementById('chk-disagreements-only').checked;
 
-    document.getElementById('chk-natural').addEventListener('change', function() {
-      if (this.checked) {
-        map.addLayer(naturalLayer);
-      } else {
-        map.removeLayer(naturalLayer);
-      }
-    });
+      industrialLayer.clearLayers();
+      naturalLayer.clearLayers();
+      otherLayer.clearLayers();
+
+      allMarkers.forEach(m => {
+        const d = m.geoData;
+        if (disagreementsOnly && !d.isDisagreement) return;
+
+        if (d.isIndustrial && showInd) industrialLayer.addLayer(m);
+        else if (d.isNatural && showNat) naturalLayer.addLayer(m);
+        else if (d.isOther && showOther) otherLayer.addLayer(m);
+      });
+    }
+
+    document.getElementById('chk-industrial').addEventListener('change', applyFilters);
+    document.getElementById('chk-natural').addEventListener('change', applyFilters);
+    document.getElementById('chk-other').addEventListener('change', applyFilters);
+    document.getElementById('chk-disagreements-only').addEventListener('change', applyFilters);
   </script>
 </body>
+
 </html>
