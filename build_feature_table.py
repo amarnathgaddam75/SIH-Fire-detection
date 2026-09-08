@@ -288,7 +288,7 @@ gdf.loc[industrial_rule, "class_label"] = "Industrial"
 # Near farmland AND NOT near industrial AND low persistence (<=3 days).
 # This catches crop residue burning -- it is near farms, burns briefly, and
 # is not near any factory.
-near_farmland = gdf["distance_to_farmland_m"] <= 1000
+near_farmland = gdf["distance_to_farmland_m"] <= 2000
 not_near_industrial = gdf["distance_to_industrial_m"] > 1000
 low_persistence = gdf["distinct_days"] <= 3
 ag_burn_rule = near_farmland & not_near_industrial & low_persistence
